@@ -1,0 +1,773 @@
+From 8a7aade15b48402403604f17d6cf7690d1a7c752 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20=C4=8Cern=C3=BD?= <jcerny@redhat.com>
+Date: Fri, 13 Dec 2019 13:52:52 +0100
+Subject: [PATCH 1/2] Remove space from temporary file names
+
+We use QTemporaryFile to create temporary files. According to
+https://doc.qt.io/qt-5/qtemporaryfile.html, the default filename
+is determined from QCoreApplication::applicationName(). It returns
+"SCAP Workbench" which leads to creating temporary files with a space
+character in their name, eg. "/tmp/SCAP Workbench.XM8663". The space
+can cause problems with missing quotes s.a. the problems described in
+https://github.com/OpenSCAP/scap-workbench/issues/196.
+To avoid these problems, it's probably better to create the temporary
+files without the space.
+
+We will create 2 temporary classes: SpacelessQTemporaryFile and
+SpacelessQTemporaryDir which are derived from QTemporaryFile and
+QTemporaryDir and call the constructor with a filename template.
+
+The QTemporaryDir replaces usage of our custom TemporaryDir class.
+We don't need this class anymore because since version 1.2.0 we
+require Qt version 5 where QTemporaryDir is present.
+---
+ include/Exceptions.h           |   3 -
+ include/ForwardDecls.h         |   1 -
+ include/OscapScannerLocal.h    |   5 +-
+ include/RPMOpenHelper.h        |   4 +-
+ include/RemediationRoleSaver.h |   4 +-
+ include/RemoteSsh.h            |   4 +-
+ include/ResultViewer.h         |   4 +-
+ include/ScanningSession.h      |   9 +-
+ include/TemporaryDir.h         |  74 ----------------
+ include/Utils.h                |  12 +++
+ src/OscapScannerBase.cpp       |   1 -
+ src/OscapScannerLocal.cpp      |  17 ++--
+ src/OscapScannerRemoteSsh.cpp  |   5 +-
+ src/RPMOpenHelper.cpp          |   4 +-
+ src/RemediationRoleSaver.cpp   |   6 +-
+ src/RemoteSsh.cpp              |   4 +-
+ src/ResultViewer.cpp           |   2 +-
+ src/SaveAsRPMDialog.cpp        |   5 +-
+ src/ScanningSession.cpp        |   4 +-
+ src/TemporaryDir.cpp           | 149 ---------------------------------
+ src/Utils.cpp                  |   6 ++
+ src/main.cpp                   |   3 -
+ 22 files changed, 53 insertions(+), 273 deletions(-)
+ delete mode 100644 include/TemporaryDir.h
+ delete mode 100644 src/TemporaryDir.cpp
+
+diff --git a/include/Exceptions.h b/include/Exceptions.h
+index 84bee42d..1b876895 100644
+--- a/include/Exceptions.h
++++ b/include/Exceptions.h
+@@ -57,9 +57,6 @@ SCAP_WORKBENCH_SIMPLE_EXCEPTION(SshConnectionException,
+ SCAP_WORKBENCH_SIMPLE_EXCEPTION(TailoringWindowException,
+     "There was a problem with TailoringWindow!\n");
+ 
+-SCAP_WORKBENCH_SIMPLE_EXCEPTION(TemporaryDirException,
+-    "There was a problem with TemporaryDir!\n");
+-
+ SCAP_WORKBENCH_SIMPLE_EXCEPTION(OscapScannerRemoteSshException,
+     "There was a problem with OscapScannerRemoteSsh!\n");
+ 
+diff --git a/include/ForwardDecls.h b/include/ForwardDecls.h
+index b9735476..3059a1c3 100644
+--- a/include/ForwardDecls.h
++++ b/include/ForwardDecls.h
+@@ -50,7 +50,6 @@ class SyncProcess;
+ class SSGIntegrationDialog;
+ class TailoringWindow;
+ class TailorProfileDialog;
+-class TemporaryDir;
+ class XCCDFItemPropertiesDockWidget;
+ class XCCDFItemSelectUndoCommand;
+ class XCCDFValueChangeUndoCommand;
+diff --git a/include/OscapScannerLocal.h b/include/OscapScannerLocal.h
+index 4370744b..00b5ab39 100644
+--- a/include/OscapScannerLocal.h
++++ b/include/OscapScannerLocal.h
+@@ -22,10 +22,9 @@
+ #ifndef SCAP_WORKBENCH_OSCAP_SCANNER_LOCAL_H_
+ #define SCAP_WORKBENCH_OSCAP_SCANNER_LOCAL_H_
+ 
+-#include <QTemporaryFile>
+-
+ #include "ForwardDecls.h"
+ #include "OscapScannerBase.h"
++#include "Utils.h"
+ 
+ 
+ class OscapScannerLocal : public OscapScannerBase
+@@ -54,7 +53,7 @@ class OscapScannerLocal : public OscapScannerBase
+ 
+         void evaluateWithOfflineRemediation();
+         void evaluateWithOtherSettings();
+-        static void setFilenameToTempFile(QTemporaryFile& file);
++        static void setFilenameToTempFile(SpacelessQTemporaryFile& file);
+ };
+ 
+ #endif
+diff --git a/include/RPMOpenHelper.h b/include/RPMOpenHelper.h
+index 18d1bad1..b6bd606c 100644
+--- a/include/RPMOpenHelper.h
++++ b/include/RPMOpenHelper.h
+@@ -23,7 +23,7 @@
+ #define SCAP_WORKBENCH_RPM_OPEN_HELPER_H_
+ 
+ #include "ForwardDecls.h"
+-#include "TemporaryDir.h"
++#include "Utils.h"
+ #include <QWidget>
+ 
+ /**
+@@ -66,7 +66,7 @@ class RPMOpenHelper
+     private:
+         static QString getRPMExtractPath();
+ 
+-        TemporaryDir mTempDir;
++        SpacelessQTemporaryDir mTempDir;
+ 
+         QString mInputPath;
+         QString mTailoringPath;
+diff --git a/include/RemediationRoleSaver.h b/include/RemediationRoleSaver.h
+index c668739e..1681b901 100644
+--- a/include/RemediationRoleSaver.h
++++ b/include/RemediationRoleSaver.h
+@@ -103,7 +103,7 @@ class ResultBasedProcessRemediationSaver : public RemediationSaverBase
+ 
+     private:
+         virtual void saveToFile(const QString& filename);
+-        QTemporaryFile mArfFile;
++        SpacelessQTemporaryFile mArfFile;
+ };
+ 
+ 
+@@ -138,7 +138,7 @@ class ResultBasedLibraryRemediationSaver : public RemediationSaverBase
+ 
+     private:
+         virtual void saveToFile(const QString& filename);
+-        QTemporaryFile mArfFile;
++        SpacelessQTemporaryFile mArfFile;
+ };
+ 
+ 
+diff --git a/include/RemoteSsh.h b/include/RemoteSsh.h
+index 7971a0e7..8ae8ba7b 100644
+--- a/include/RemoteSsh.h
++++ b/include/RemoteSsh.h
+@@ -24,7 +24,7 @@
+ 
+ #include "ForwardDecls.h"
+ #include "ProcessHelpers.h"
+-#include "TemporaryDir.h"
++#include "Utils.h"
+ #include <QObject>
+ 
+ class SshConnection : public QObject
+@@ -57,7 +57,7 @@ class SshConnection : public QObject
+         QString mTarget;
+         unsigned short mPort;
+ 
+-        TemporaryDir* mSocketDir;
++        SpacelessQTemporaryDir* mSocketDir;
+         QString mMasterSocket;
+         QProcessEnvironment mEnvironment;
+ 
+diff --git a/include/ResultViewer.h b/include/ResultViewer.h
+index 978a23a4..a6da89da 100644
+--- a/include/ResultViewer.h
++++ b/include/ResultViewer.h
+@@ -23,9 +23,9 @@
+ #define SCAP_WORKBENCH_RESULT_VIEWER_H_
+ 
+ #include "ForwardDecls.h"
++#include "Utils.h"
+ 
+ #include <QWidget>
+-#include <QTemporaryFile>
+ #include <QUrl>
+ #include <QMenu>
+ #include <QLabel>
+@@ -97,7 +97,7 @@ class ResultViewer : public QWidget
+         QByteArray mResults;
+         QByteArray mReport;
+         /// If user requests to open the file via desktop services
+-        QTemporaryFile* mReportFile;
++        SpacelessQTemporaryFile* mReportFile;
+         QByteArray mARF;
+ };
+ 
+diff --git a/include/ScanningSession.h b/include/ScanningSession.h
+index c1d2b490..25ccc604 100644
+--- a/include/ScanningSession.h
++++ b/include/ScanningSession.h
+@@ -23,9 +23,8 @@
+ #define SCAP_WORKBENCH_SCANNING_SESSION_H_
+ 
+ #include "ForwardDecls.h"
++#include "Utils.h"
+ 
+-#include <QTemporaryDir>
+-#include <QTemporaryFile>
+ #include <QSet>
+ #include <QDir>
+ #include <map>
+@@ -292,7 +291,7 @@ class ScanningSession
+         mutable struct xccdf_tailoring* mTailoring;
+ 
+         /// Temporary copy of opened DS or XCCDF file
+-        QTemporaryDir* mTempOpenDir;
++        SpacelessQTemporaryDir* mTempOpenDir;
+         /// Path to temporary DS or XCCDF file
+         QString mTempOpenPath;
+         /// Path to original DS or XCCDF file
+@@ -301,9 +300,9 @@ class ScanningSession
+         QSet<QString> mClosureOfOriginalFile;
+ 
+         /// Temporary file provides auto deletion and a valid temp file path
+-        QTemporaryFile mTailoringFile;
++        SpacelessQTemporaryFile mTailoringFile;
+         /// Temporary file provides auto deletion and a valid temp file path
+-        QTemporaryFile mGuideFile;
++        SpacelessQTemporaryFile mGuideFile;
+ 
+         /// Whether or not validation should be skipped
+         bool mSkipValid;
+diff --git a/include/TemporaryDir.h b/include/TemporaryDir.h
+deleted file mode 100644
+index fadabeca..00000000
+--- a/include/TemporaryDir.h
++++ /dev/null
+@@ -1,74 +0,0 @@
+-/*
+- * Copyright 2013 Red Hat Inc., Durham, North Carolina.
+- * All Rights Reserved.
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- * Authors:
+- *      Martin Preisler <mpreisle@redhat.com>
+- */
+-
+-#ifndef SCAP_WORKBENCH_TEMPORARY_DIR_H_
+-#define SCAP_WORKBENCH_TEMPORARY_DIR_H_
+-
+-#include "ForwardDecls.h"
+-#include <QString>
+-
+-/**
+- * @brief Creates a (LOCAL!) temporary directory and auto destroys it if told so
+- *
+- * This structure is lazy, it only creates the temp directory when asked about
+- * its path. Before you query the path the directory won't be created.
+- *
+- * @note Default setting is to auto-remove the directory on destruction.
+- * @internal We should replace this with QTemporaryDir when scap-workbench moves to Qt5
+- */
+-class TemporaryDir
+-{
+-    public:
+-        TemporaryDir();
+-        ~TemporaryDir();
+-
+-        /**
+-         * @brief Changes the auto-remove settings
+-         *
+-         * If autoRemove is true the structure will recursively remove the entire
+-         * temporary directory (that is the default setting). Else it will just
+-         * create it and it's up to the user to destroy it.
+-         */
+-        void setAutoRemove(const bool autoRemove);
+-
+-        /// @see TemporaryDir::setAutoRemove
+-        bool getAutoRemove() const;
+-
+-        /**
+-         * @brief Returns absolute path of created temporary directory
+-         *
+-         * @exception TemporaryDirException Failed to create temporary directory (nonzero exit code from mktemp -d)
+-         */
+-        const QString& getPath() const;
+-
+-    private:
+-        /**
+-         * Ensures that temporary directory has been created and the stored path is valid.
+-         */
+-        void ensurePath() const;
+-
+-        /// Holds absolute path of the created temporary directory
+-        mutable QString mPath;
+-        /// @see TemporaryDir::setAutoRemove
+-        bool mAutoRemove;
+-};
+-
+-#endif
+diff --git a/include/Utils.h b/include/Utils.h
+index c3b6f013..fb9c1507 100644
+--- a/include/Utils.h
++++ b/include/Utils.h
+@@ -28,6 +28,8 @@
+ #include <QDir>
+ #include <QIcon>
+ #include <QUrl>
++#include <QTemporaryFile>
++#include <QTemporaryDir>
+ 
+ /**
+  * @brief Retrieves QDir representing the share directory
+@@ -115,4 +117,14 @@ void openUrlGuarded(const QUrl& url);
+  */
+ const QString& getSetSidPath();
+ 
++class SpacelessQTemporaryFile: public QTemporaryFile {
++    public:
++        SpacelessQTemporaryFile ();
++};
++
++class SpacelessQTemporaryDir: public QTemporaryDir {
++    public:
++        SpacelessQTemporaryDir ();
++};
++
+ #endif
+diff --git a/src/OscapScannerBase.cpp b/src/OscapScannerBase.cpp
+index 3d4075cf..daf08b9c 100644
+--- a/src/OscapScannerBase.cpp
++++ b/src/OscapScannerBase.cpp
+@@ -24,7 +24,6 @@
+ 
+ #include <QThread>
+ #include <QAbstractEventDispatcher>
+-#include <QTemporaryFile>
+ #include <cassert>
+ 
+ extern "C"
+diff --git a/src/OscapScannerLocal.cpp b/src/OscapScannerLocal.cpp
+index 48687f25..dd9891fa 100644
+--- a/src/OscapScannerLocal.cpp
++++ b/src/OscapScannerLocal.cpp
+@@ -22,7 +22,6 @@
+ #include "OscapScannerLocal.h"
+ #include "ProcessHelpers.h"
+ #include "ScanningSession.h"
+-#include "TemporaryDir.h"
+ 
+ #include <stdexcept>
+ #include <QThread>
+@@ -33,7 +32,7 @@ extern "C"
+ #include <xccdf_session.h>
+ }
+ 
+-void OscapScannerLocal::setFilenameToTempFile(QTemporaryFile& file)
++void OscapScannerLocal::setFilenameToTempFile(SpacelessQTemporaryFile& file)
+ {
+     file.open();
+     file.close();
+@@ -97,21 +96,21 @@ void OscapScannerLocal::evaluate()
+     // This is mainly for check-engine-results and oval-results, to ensure
+     // we get a full report, including info from these files. openscap's XSLT
+     // uses info in the check engine results if it can find them.
+-    TemporaryDir workingDir;
+-    process.setWorkingDirectory(workingDir.getPath());
++    SpacelessQTemporaryDir workingDir;
++    process.setWorkingDirectory(workingDir.path());
+ 
+     QStringList args;
+-    QTemporaryFile inputARFFile;
++    SpacelessQTemporaryFile inputARFFile;
+ 
+-    QTemporaryFile arfFile;
++    SpacelessQTemporaryFile arfFile;
+     arfFile.setAutoRemove(true);
+     setFilenameToTempFile(arfFile);
+ 
+-    QTemporaryFile reportFile;
++    SpacelessQTemporaryFile reportFile;
+     reportFile.setAutoRemove(true);
+     setFilenameToTempFile(reportFile);
+ 
+-    QTemporaryFile resultFile;
++    SpacelessQTemporaryFile resultFile;
+     resultFile.setAutoRemove(true);
+     setFilenameToTempFile(resultFile);
+ 
+@@ -223,7 +222,7 @@ QStringList OscapScannerLocal::getCommandLineArgs() const
+ 
+     if (mScannerMode == SM_OFFLINE_REMEDIATION)
+     {
+-        QTemporaryFile inputARFFile;
++        SpacelessQTemporaryFile inputARFFile;
+         inputARFFile.setAutoRemove(true);
+         inputARFFile.open();
+         inputARFFile.write(getARFForRemediation());
+diff --git a/src/OscapScannerRemoteSsh.cpp b/src/OscapScannerRemoteSsh.cpp
+index 44611a77..dcfd6d5f 100644
+--- a/src/OscapScannerRemoteSsh.cpp
++++ b/src/OscapScannerRemoteSsh.cpp
+@@ -25,7 +25,6 @@
+ 
+ #include <QThread>
+ #include <QAbstractEventDispatcher>
+-#include <QTemporaryFile>
+ #include <QFileInfo>
+ #include <QDir>
+ #include <cassert>
+@@ -105,7 +104,7 @@ QStringList OscapScannerRemoteSsh::getCommandLineArgs() const
+ 
+     if (mScannerMode == SM_OFFLINE_REMEDIATION)
+     {
+-        QTemporaryFile inputARFFile;
++        SpacelessQTemporaryFile inputARFFile;
+         inputARFFile.setAutoRemove(true);
+         inputARFFile.open();
+         inputARFFile.write(getARFForRemediation());
+@@ -381,7 +380,7 @@ QString OscapScannerRemoteSsh::copyInputFileOver()
+ 
+     QString localPath = "";
+ 
+-    QTemporaryFile inputARFFile;
++    SpacelessQTemporaryFile inputARFFile;
+     inputARFFile.setAutoRemove(true);
+     if (mScannerMode == SM_OFFLINE_REMEDIATION)
+     {
+diff --git a/src/RPMOpenHelper.cpp b/src/RPMOpenHelper.cpp
+index 565eaa16..b12f109d 100644
+--- a/src/RPMOpenHelper.cpp
++++ b/src/RPMOpenHelper.cpp
+@@ -33,12 +33,12 @@ RPMOpenHelper::RPMOpenHelper(const QString& path)
+         const QFileInfo pathInfo(path);
+         proc.setCommand(getRPMExtractPath());
+         proc.setArguments(QStringList(pathInfo.absoluteFilePath()));
+-        proc.setWorkingDirectory(mTempDir.getPath());
++        proc.setWorkingDirectory(mTempDir.path());
+     }
+ 
+     proc.run();
+ 
+-    const QDir tempDir(mTempDir.getPath());
++    const QDir tempDir(mTempDir.path());
+ 
+     if (proc.getExitCode() != 0)
+     {
+diff --git a/src/RemediationRoleSaver.cpp b/src/RemediationRoleSaver.cpp
+index 247475e0..900a221d 100644
+--- a/src/RemediationRoleSaver.cpp
++++ b/src/RemediationRoleSaver.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include "RemediationRoleSaver.h"
+ #include "DiagnosticsDialog.h"
++#include "Utils.h"
+ 
+ extern "C"
+ {
+@@ -41,7 +42,6 @@ extern "C"
+ #endif
+ }
+ 
+-#include "TemporaryDir.h"
+ 
+ 
+ const QString bashSaveMessage = QObject::tr("Save remediation role as a bash script");
+@@ -197,8 +197,8 @@ void ResultBasedProcessRemediationSaver::saveToFile(const QString& filename)
+     // This is a lightweight launch though.
+     QProcess process(mParentWindow);
+ 
+-    TemporaryDir workingDir;
+-    process.setWorkingDirectory(workingDir.getPath());
++    SpacelessQTemporaryDir workingDir;
++    process.setWorkingDirectory(workingDir.path());
+     QString program(SCAP_WORKBENCH_LOCAL_OSCAP_PATH);
+ 
+     process.start(program, args);
+diff --git a/src/RemoteSsh.cpp b/src/RemoteSsh.cpp
+index 36c359ff..9f737b8a 100644
+--- a/src/RemoteSsh.cpp
++++ b/src/RemoteSsh.cpp
+@@ -109,8 +109,8 @@ void SshConnection::connect()
+             mSocketDir = 0;
+         }
+ 
+-        mSocketDir = new TemporaryDir();
+-        mMasterSocket = mSocketDir->getPath() + "/ssh_socket";
++        mSocketDir = new SpacelessQTemporaryDir();
++        mMasterSocket = mSocketDir->path() + "/ssh_socket";
+     }
+     catch (const SyncProcessException& e)
+     {
+diff --git a/src/ResultViewer.cpp b/src/ResultViewer.cpp
+index c65be2d2..1e730e99 100644
+--- a/src/ResultViewer.cpp
++++ b/src/ResultViewer.cpp
+@@ -158,7 +158,7 @@ void ResultViewer::openReport()
+         mReportFile = 0;
+     }
+ 
+-    mReportFile = new QTemporaryFile();
++    mReportFile = new SpacelessQTemporaryFile();
+     mReportFile->setFileTemplate(mReportFile->fileTemplate() + ".html");
+     mReportFile->open();
+     mReportFile->write(mReport);
+diff --git a/src/SaveAsRPMDialog.cpp b/src/SaveAsRPMDialog.cpp
+index 6c537444..611d15fd 100644
+--- a/src/SaveAsRPMDialog.cpp
++++ b/src/SaveAsRPMDialog.cpp
+@@ -21,7 +21,6 @@
+ 
+ #include "SaveAsRPMDialog.h"
+ #include "MainWindow.h"
+-#include "TemporaryDir.h"
+ #include "ScanningSession.h"
+ #include "ProcessHelpers.h"
+ 
+@@ -128,7 +127,7 @@ void SaveAsRPMDialog::slotFinished(int result)
+         args.append(cwd.relativeFilePath(*it));
+     }
+ 
+-    TemporaryDir tailoringDir;
++    SpacelessQTemporaryDir tailoringDir;
+ 
+     // Tailoring file is a special case since it may be in memory only.
+     // In case it is memory only we don't want it to cause our common ancestor dir to be /
+@@ -138,7 +137,7 @@ void SaveAsRPMDialog::slotFinished(int result)
+         QFileInfo tailoringFile(mScanningSession->getTailoringFilePath());
+         assert(tailoringFile.exists());
+ 
+-        const QString tailoringFilePath = QString("%1/%2").arg(tailoringDir.getPath(), "tailoring-xccdf.xml");
++        const QString tailoringFilePath = QString("%1/%2").arg(tailoringDir.path(), "tailoring-xccdf.xml");
+ 
+         ScanningSession::copyOrReplace(tailoringFile.absoluteFilePath(),
+             tailoringFilePath);
+diff --git a/src/ScanningSession.cpp b/src/ScanningSession.cpp
+index a486761d..20ce501f 100644
+--- a/src/ScanningSession.cpp
++++ b/src/ScanningSession.cpp
+@@ -34,8 +34,6 @@ extern "C" {
+ 
+ #include <cassert>
+ #include <ctime>
+-#include <QTemporaryDir>
+-#include <QTemporaryFile>
+ #include <QFileInfo>
+ #include <QBuffer>
+ #include <QXmlQuery>
+@@ -161,7 +159,7 @@ void ScanningSession::cloneToTemporaryFile(const QString& path)
+     // Clean the temporary directory if it is open already, then create
+     // a new one.
+     cleanTmpDir();
+-    mTempOpenDir = new QTemporaryDir();
++    mTempOpenDir = new SpacelessQTemporaryDir();
+ 
+     // Recalling is unlikely to succeed, so throw a fatal exception
+     if (!mTempOpenDir->isValid())
+diff --git a/src/TemporaryDir.cpp b/src/TemporaryDir.cpp
+deleted file mode 100644
+index 0fed2556..00000000
+--- a/src/TemporaryDir.cpp
++++ /dev/null
+@@ -1,149 +0,0 @@
+-/*
+- * Copyright 2013 Red Hat Inc., Durham, North Carolina.
+- * All Rights Reserved.
+- *
+- * This program is free software: you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation, either version 3 of the License, or
+- * (at your option) any later version.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+- *
+- * Authors:
+- *      Martin Preisler <mpreisle@redhat.com>
+- */
+-
+-#include "TemporaryDir.h"
+-#include "ProcessHelpers.h"
+-#include "Exceptions.h"
+-
+-#include <QDir>
+-#include <iostream>
+-
+-static bool recursiveRemoveDir(const QString& dirName)
+-{
+-    // Adapted code from:
+-    // http://john.nachtimwald.com/2010/06/08/qt-remove-directory-and-its-contents/
+-
+-    bool result = true;
+-    QDir dir(dirName);
+-
+-    if (dir.exists(dirName))
+-    {
+-        for (QFileInfo info : dir.entryInfoList(QDir::NoDotAndDotDot | QDir::System | QDir::Hidden  | QDir::AllDirs | QDir::Files, QDir::DirsFirst))
+-        {
+-            if (info.isDir())
+-                result = recursiveRemoveDir(info.absoluteFilePath());
+-            else
+-                result = QFile::remove(info.absoluteFilePath());
+-
+-            if (!result)
+-                return result;
+-        }
+-        result = dir.rmdir(dirName);
+-    }
+-
+-    return result;
+-}
+-
+-TemporaryDir::TemporaryDir():
+-    mAutoRemove(true)
+-{}
+-
+-TemporaryDir::~TemporaryDir()
+-{
+-    if (!mPath.isEmpty() && mAutoRemove)
+-    {
+-        if (!recursiveRemoveDir(mPath))
+-        {
+-            // We don't throw on destruction! The worst thing that can happen
+-            // is leftover files which is not a big deal anyway.
+-
+-            std::cerr << "Failed to remove temporary directory '" << mPath.toUtf8().constData() << "'." << std::endl;
+-        }
+-    }
+-}
+-
+-void TemporaryDir::setAutoRemove(const bool autoRemove)
+-{
+-    mAutoRemove = autoRemove;
+-}
+-
+-bool TemporaryDir::getAutoRemove() const
+-{
+-    return mAutoRemove;
+-}
+-
+-const QString& TemporaryDir::getPath() const
+-{
+-    ensurePath();
+-    return mPath;
+-}
+-
+-// nextRand adapted from from QTemporaryDir from Qt5, licensed under LGPL2.1+
+-
+-// Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
+-// Contact: http://www.qt-project.org/legal
+-//
+-// GNU Lesser General Public License Usage
+-// Alternatively, this file may be used under the terms of the GNU Lesser
+-// General Public License version 2.1 or version 3 as published by the Free
+-// Software Foundation and appearing in the file LICENSE.LGPLv21 and
+-// LICENSE.LGPLv3 included in the packaging of this file. Please review the
+-// following information to ensure the GNU Lesser General Public License
+-// requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+-// http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+-//
+-// In addition, as a special exception, Digia gives you certain additional
+-// rights. These rights are described in the Digia Qt LGPL Exception
+-// version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+-
+-static int nextRand(int& v)
+-{
+-    int r = v % 62;
+-    v /= 62;
+-    if (v < 62)
+-        v = qrand();
+-    return r;
+-}
+-
+-void TemporaryDir::ensurePath() const
+-{
+-    static const char letters[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+-
+-    if (mPath.isEmpty())
+-    {
+-        QString dirName;
+-        while (true)
+-        {
+-            dirName = "";
+-
+-            int v = qrand();
+-            dirName += letters[nextRand(v)];
+-            dirName += letters[nextRand(v)];
+-            dirName += letters[nextRand(v)];
+-            dirName += letters[nextRand(v)];
+-            dirName += letters[nextRand(v)];
+-            dirName += letters[nextRand(v)];
+-
+-            if (QDir::temp().mkdir(dirName))
+-                break;
+-        }
+-
+-        const QDir dir(QDir::temp().absoluteFilePath(dirName));
+-
+-        if (!dir.exists())
+-            throw TemporaryDirException(
+-                QString("Failed to create temporary directory. mkdir succeeded "
+-                    "but the directory does not exist!")
+-            );
+-
+-        mPath = dir.absolutePath();
+-    }
+-}
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 802cd503..d3562fac 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -217,3 +217,9 @@ const QString& getSetSidPath()
+     return ret;
+ #endif
+ }
++
++SpacelessQTemporaryFile::SpacelessQTemporaryFile () :
++    QTemporaryFile(QDir::cleanPath(QDir::tempPath() + "/" + "XXXXXX")) {}
++
++SpacelessQTemporaryDir::SpacelessQTemporaryDir () :
++    QTemporaryDir(QDir::cleanPath(QDir::tempPath() + "/" + "XXXXXX")) {}
+diff --git a/src/main.cpp b/src/main.cpp
+index ebc7b4ba..5f6480a8 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -35,9 +35,6 @@ int main(int argc, char** argv)
+     FreeConsole();
+ #endif
+ 
+-    // Needed for TemporaryDir
+-    qsrand(QTime::currentTime().msec());
+-
+     Application app(argc, argv);
+     return app.exec();
+ }
+
+From c8b9c4a7e57a01293e4f622f18f139b29ea544d8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20=C4=8Cern=C3=BD?= <jcerny@redhat.com>
+Date: Mon, 6 Jan 2020 17:54:04 +0100
+Subject: [PATCH 2/2] Add scap-workbench to temporary file name template
+
+This way it will be obvious that the files have been created by
+SCAP Workbench.
+---
+ src/Utils.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index d3562fac..fbeb809c 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -219,7 +219,7 @@ const QString& getSetSidPath()
+ }
+ 
+ SpacelessQTemporaryFile::SpacelessQTemporaryFile () :
+-    QTemporaryFile(QDir::cleanPath(QDir::tempPath() + "/" + "XXXXXX")) {}
++    QTemporaryFile(QDir::cleanPath(QDir::tempPath() + "/" + "scap-workbench-XXXXXX")) {}
+ 
+ SpacelessQTemporaryDir::SpacelessQTemporaryDir () :
+-    QTemporaryDir(QDir::cleanPath(QDir::tempPath() + "/" + "XXXXXX")) {}
++    QTemporaryDir(QDir::cleanPath(QDir::tempPath() + "/" + "scap-workbench-XXXXXX")) {}
