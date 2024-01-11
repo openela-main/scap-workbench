@@ -1,0 +1,51 @@
+From 9a85a7dd795112a53a04e5552a350ca2e1effbb0 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20=C4=8Cern=C3=BD?= <jcerny@redhat.com>
+Date: Wed, 24 Oct 2018 15:04:18 +0200
+Subject: [PATCH] Fix SCAP Workbench errors shown in Diagnostics Windows
+
+This patch addresses the follwong part of messages chunk. Even if it
+says that "oscap" process has written the content, it's the wrapper
+script in fact.
+
+```
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access '/tmp/SCAP': No such file or directory
+
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access 'Workbench.h22666': No such file or directory
+
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access '/tmp/SCAP': No such file or directory
+
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access 'Workbench.M22666': No such file or directory
+
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access '/tmp/SCAP': No such file or directory
+
+14:34:53 | error    | The 'oscap' process has written the following
+content to stderr:
+chown: cannot access 'Workbench.X22666': No such file or directory
+```
+---
+ scap-workbench-oscap.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scap-workbench-oscap.sh b/scap-workbench-oscap.sh
+index 216376f2..90664446 100755
+--- a/scap-workbench-oscap.sh
++++ b/scap-workbench-oscap.sh
+@@ -93,7 +93,7 @@ function chown_copy
+ 
+     # chown only required if wrapper_{uid,gid} differs from real_{uid,gid}
+     if [ $wrapper_uid -ne $real_uid ] || [ $wrapper_gid -ne $real_gid ]; then
+-        chown $wrapper_uid:$wrapper_gid $where
++        chown $wrapper_uid:$wrapper_gid "$where"
+     fi
+ }
+ 
